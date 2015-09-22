@@ -9,9 +9,9 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Tobin Harris"]
   spec.email         = ["tobin@tobinharris.com"]
 
-  if spec.respond_to?(:metadata)
-    spec.metadata['allowed_push_host'] = "http://rubygems.org"
-  end
+  # if spec.respond_to?(:metadata)
+  #   spec.metadata['allowed_push_host'] = "http://rubygems.org"
+  # end
 
   spec.summary       = %q{Kanbanery reporting tool (very basic right now)}
   spec.description   = %q{For listing WIP on your Kanbanery board}
