@@ -1,0 +1,345 @@
+require 'active_support/core_ext/module/attribute_accessors'
+require 'active_support/json'
+require 'openssl'
+require 'terminal-table'
+require 'paint'
+require 'net/http'
+
+module BaneryStats
+  mattr_accessor :api_token
+
+  class JsonGet
+    def self.perform(url)
+      new(url).perform
+    end
+
+    attr_reader :url
+
+    def initialize(url)
+      @url = url
+    end
+
+    def perform
+      ActiveSupport::JSON.decode(response.body)
+    end
+
+    def response
+      http.request(request)
+    end
+
+    def http
+      Net::HTTP.new(uri.host, uri.port).tap do |h|
+        h.use_ssl = true
+      end
+    end
+
+    def uri
+      URI.parse(url)
+    end
+
+    def request
+      Net::HTTP::Get.new(uri.request_uri).tap do |r|
+        r['X-Kanbanery-ApiToken'] = BaneryStats.api_token or raise "You must set BaneryStats.api_token to your API token"
+      end
+    end
+  end
+
+  class OutputSummary
+    attr_accessor :tasks, :task_types, :users, :estimates
+
+    def self.run
+      new.run
+    end
+
+    def run
+      # workspaces.each do |workspace|
+#         log("WORKSPACE #{workspace.name} #projects: #{workspace.projects.size}")
+#         workspace.projects.each do |workspace_project|
+#           project_tasks = project_tasks(workspace.name, workspace_project.id)
+#           tasks_count = project_tasks.size
+#           log("#{tasks_count.to_s.rjust(5)} #{workspace_project.name}") if tasks_count > 0
+#         end
+#       end
+      self.estimates = project_estimates('pocketworks', 58789)
+      self.users = project_users('pocketworks', 58789)
+      self.task_types = project_task_types('pocketworks', 58789)
+      self.tasks = project_tasks('pocketworks', 58789)
+      
+      
+      #puts self.users.last
+      #puts self.task_types.last
+      #log("#{self.tasks.count}")
+      #puts self.stale
+    end
+    
+    def non_epics
+      self.tasks.select{|t| t["task_type_name"] != "Deliverable" and not OutputSummary.is_with_jabba(t)  }
+    end
+    
+    def blocked_tasks
+      self.tasks.select{|t| t["blocked"]==true and not OutputSummary.is_with_jabba(t) }
+    end
+    
+    def done_tasks
+      self.tasks.select{|t| ! is_open(t) and t["task_type_name"] != "Deliverable" }
+    end
+    
+    def is_open(card)
+      card["column_id"] != 393331
+    end
+    
+    def self.is_open(card)
+      card["column_id"] != 393331
+    end
+    
+    def self.is_with_jabba(card)
+      card["username"] =~ /Jabba.+/
+    end
+    
+    def bugs
+      self.tasks.select{|t| t["task_type_name"] == "Bug" and is_open(t)}
+    end
+    
+    def stale
+      self.tasks.select{|t| t["is_stale"] == true and is_open(t) and not t["task_type_name"] == "Deliverable"  and not OutputSummary.is_with_jabba(t) }
+    end
+    
+    def with_deadline
+      self.tasks.select{|t| t["deadline"] and Time.parse(t["deadline"]) > (Time.new - (60*60*24*5)) and is_open(t) }
+    end
+    
+    def without_estimate
+      self.tasks.select{|t| t["estimate"] == nil and not ["Deliverable","Bug", "Amend"].include?(t["task_type_name"])}
+    end
+    
+    def with_jabba
+      self.tasks.select{ |t| is_open(t) and OutputSummary.is_with_jabba(t) }
+    end
+    
+    
+    
+
+    def workspaces      
+      data = JsonGet.perform(workspace_url)
+      data.collect do |workspace_data|
+        projects = workspace_data["projects"].collect { |workspace_project| OpenStruct.new(id: workspace_project["id"], name: workspace_project["name"]) }
+        OpenStruct.new(id: workspace_data["id"], name: workspace_data["name"], projects: projects)
+      end
+    end
+
+    def project_tasks(workspace_name, project_id)
+      data = JsonGet.perform(project_tasks_url(workspace_name, project_id))
+      #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
+      data.each do |t|
+       tmp = self.task_types.select{|tt| t["task_type_id"] == tt["id"]}.first
+       if tmp
+         t["task_type_name"] = tmp["name"]
+         six_days_ago = Time.new - (60*60*24*6)
+         t["is_stale"] = ! (Time.parse(t["updated_at"]) > six_days_ago || Time.parse(t["moved_at"]) > six_days_ago)
+       end
+       
+       estimate = self.estimates.select{|e|t["estimate_id"]==e["id"]}.first
+       if estimate
+         t["estimate"] = estimate["value"]
+       else
+         t["estimate"] = nil
+       end
+       
+       username = user_by_id(t["owner_id"].to_i) ? user_by_id(t["owner_id"].to_i)["name"] : "None"
+       if username
+         t["username"] = username
+       else
+         t["username"] = nil
+       end
+              
+       t["is_open"] = is_open(t)
+      end
+      data
+    end
+    
+    def project_task_types(workspace_name, project_id)
+      data = JsonGet.perform(project_task_types_url(workspace_name, project_id))
+      #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
+      data
+    end
+    
+    def project_users(workspace_name, project_id)
+      data = JsonGet.perform(project_users_url(workspace_name, project_id))
+      #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
+      data
+    end
+    
+    def project_estimates(workspace_name, project_id)
+      data = JsonGet.perform(project_estimates_url(workspace_name, project_id))
+      #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
+      data
+    end 
+    
+    def user_by_id(id)
+      self.users.select{|u|u["id"]==id}.first
+    end
+
+    def own_user_id
+      @own_user_id ||=
+        begin
+          data = JsonGet.perform(own_user_info_url)
+          data["id"]
+        end
+    end
+
+    def log(msg)
+      puts msg
+    end
+
+    def workspace_url
+      "https://kanbanery.com/api/v1/user/workspaces.json/"
+    end
+
+    def project_tasks_url(workspace_name, project_id)
+      "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/tasks.json"
+    end
+    
+    def project_task_types_url(workspace_name, project_id)
+      "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/task_types.json"
+    end
+
+    def own_user_info_url
+      "https://avarteq.kanbanery.com/api/v1/user.json"
+    end
+    
+    def project_users_url(workspace_name, project_id)
+      "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/users.json"
+    end
+    
+    def project_estimates_url(workspace_name, project_id)
+      "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/estimates.json"
+    end
+  end
+end
+
+
+class CmdParser
+  attr_reader :args
+  
+  def initialize(args)
+    self.args = args    
+  end
+end
+
+config_file = ENV['HOME']+'/.kanbanery'
+token = ENV['KANBANERY_API_TOKEN']
+if ! token and File.exists?(config_file)
+  token = File.open(config_file).read.chomp
+else
+  puts "What is your Kanbanery API token? (you can get this from your profile page)"
+  token = gets.chomp
+  f = File.open(config_file,'w')
+  f.write(token)  
+  f.close
+  puts "Token written to ~/.kanbanery\nPlease wait...."
+end
+
+BaneryStats.api_token = token #"8fe454038afb877a1db4a5ad7049248b7b075fa4" # ENV['KANBANERY_API_TOKEN']
+report = BaneryStats::OutputSummary.new
+report.run #fetch data and make it nice
+#puts report.tasks.first
+tasks = report.tasks.select{|t| t["is_open"] && t['task_type_name'] != 'Deliverable'}
+deliverables = report.tasks.select{|t| t["is_open"] && t['task_type_name'] == 'Deliverable'}
+
+rows = []
+total = 0
+#cmd = CmdParser.new(ARGV)
+tasks.each do |task| 
+  fmt_estimate = task["estimate"] ? task["estimate"].to_i : (task['task_type_name'] == "Bug" ? "-" : Paint["MISSING",:red])
+  fmt_estimate = Paint[fmt_estimate,:bright,:red] if task["estimate"] && task["estimate"] > 8
+  parts = task['title'].split(':')
+  title = parts.length == 2 ? parts[1] : parts[0] 
+  company = parts.length == 2 ? parts[0] : ""
+  rows << [task['task_type_name'], task['username'], company, title, fmt_estimate]
+  total += task["estimate"] ? task["estimate"].to_i : 0
+  #puts "#{task['task_type_name']}:#{task['username']}:#{task['title']} "
+end
+rows << [Paint["#{tasks.count} items",:yellow], "","", "", Paint["#{total} points",:yellow]]
+
+table = Terminal::Table.new :headings => ['Type', 'Who', 'Company', 'Title', 'Points'], :rows => rows
+puts table
+
+
+puts "No open tasks" if tasks.count == 0 
+
+
+
+# OLD CRAP IGNORE
+if false
+
+# :first_in sets how long it takes before the job is first run. In this case, it is run immediately
+SCHEDULER.every '1m', :first_in => 0 do |job|
+  BaneryStats.api_token =  "8fe454038afb877a1db4a5ad7049248b7b075fa4" # ENV['KANBANERY_API_TOKEN']
+  report = BaneryStats::OutputSummary.new
+  report.run
+  #puts report.tasks.last
+  status = 'ok'
+  send_event('kanban_tasks', {current: report.tasks.count, last: 0, value: report.tasks.count, status: status})
+  
+  #Blocked cards - percentage
+  status = case ((report.blocked_tasks.count.to_f / report.tasks.count.to_f)*100)
+  when 0 then 'ok'
+  when 1..10 then 'danger'  
+  else 'warning'  
+  end
+  send_event('kanban_blocked_tasks', {current: report.blocked_tasks.count, value: report.blocked_tasks.count, status: status})
+
+  # Percent done
+  val = ((report.done_tasks.count.to_f/report.tasks.count.to_f) * 100).to_i
+  status = case val
+    when 0..70 then 'danger'
+    else 'ok'  
+  end
+  send_event('kanban_done_tasks', {current: val, last: nil, value: val, status: status})
+  
+  # List of assigned cards to people
+  list = []
+  report.tasks.group_by{|t| t["owner_id"]}.each do |t,c|
+    username = report.user_by_id(t.to_i) ? report.user_by_id(t.to_i)["name"] : "None"
+    list.push({label: username, value: c.count}) 
+  end
+  send_event('kanban_done_list', items: list, status: 'ok')
+  
+  # Count of bugs
+  val = report.bugs.count
+  status = case val
+    when val == 0 then 'ok'
+    when val < 3 then 'danger'
+    else 'warning'  
+  end
+  send_event('kanban_bugs', {current: val, last: nil, value: val, status: status})
+  
+  # Count of stale
+  val = report.stale.count
+  status = case val
+    when val == 0 then 'ok'
+    when val < 3 then 'danger'
+    else 'warning'  
+  end
+  send_event('kanban_stale', {current: val, last: nil, value: val, status: status})
+  
+  # List of stale
+  list = []
+  report.stale.each do |t|
+    label = t["title"]    
+    who = report.user_by_id(t["owner_id"].to_i)
+    list.push({label: "#{label} - #{who ? who['name'] : 'Nobody'}", value: nil}) 
+  end
+  send_event('kanban_stale_list', items: list, status: 'ok')
+  
+  # List of stale
+  list = []
+  report.with_deadline.each do |t|
+    label = t["title"]    
+    time = Time.parse(t["deadline"]).strftime("%a %d %b")
+    list.push({label: "#{time}: #{label}", value: nil}) 
+  end
+  send_event('kanban_deadline_list', items: list, status: 'ok')
+  
+end
+end
