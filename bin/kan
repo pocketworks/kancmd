@@ -290,13 +290,17 @@ tasks.each do |task|
   parts = task['title'].split(':')
   title = parts.length == 2 ? parts[1] : parts[0] 
   company = parts.length == 2 ? parts[0] : ""  
-  rows << [task["column_name"],task['task_type_name'], task['username'], company, title, fmt_estimate]
+  color = :white
+  color = [100, 100, 100] if task["column_name"] == "Backlog"
+  color = :red if task["task_type_name"] == "Bug"
+  
+  rows << [Paint[task["column_name"],color],Paint[task['task_type_name'],color], Paint[task['username'],color], Paint[company,color], Paint[title,color], fmt_estimate, task["deadline"] ? Paint[Time.parse(task["deadline"]).strftime('%m/%d/%Y'),color] : "" ] 
   total += task["estimate"] ? task["estimate"].to_i : 0
   #puts "#{task['task_type_name']}:#{task['username']}:#{task['title']} "
 end
 rows << [Paint["#{allowed_tasks.count} items",:yellow], "","", "", Paint["#{total} points",:yellow]]
 
-table = Terminal::Table.new :headings => ['Status', 'Type', 'Who', 'Company', 'Title', 'Points'], :rows => rows
+table = Terminal::Table.new :headings => ['Status', 'Type', 'Who', 'Company', 'Title', 'Points',"I'll finish at"], :rows => rows
 puts table
 
 
