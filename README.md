@@ -10,11 +10,38 @@ Install:
 
 ## Usage
 
-    kan
+    $ kan
     
-    kan | grep Bob
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Status                       | Type  | Who             | Company       | Title                                                     | Points  |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Backlog                      | Story | Radek           | DevOps        |  Configure build server on Mac Mini for Android           | 2       |
+    | Ready for Test               | Story | Tobin Harris    | Mi|Home       |  Full QA sweep with updated spreadsheet                   | 1       |
+    | Ready for Test               | Story | Jabba The Hutt  | White Label   |  Skyline Fare Estimate Integration Android                | 1       |
+    | Backlog                      | Story | Radek           | White Label   |  Skyline Fare Estimate Integration iPhone                 | 1       |
+    | Dev WIP                      | Story | Ramesh          | Fresenius     |  Update the Sales App so it will run on iPhone            | 21      |   
+    | 4  items                     |       |                 |               |  26 points                                                |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
     
-    kan | grep Bug
+    $ kan Backlog
+    
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Status                       | Type  | Who             | Company       | Title                                                     | Points  |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Backlog                      | Story | Radek           | DevOps        |  Configure build server on Mac Mini for Android           | 2       |    
+    | Backlog                      | Story | Radek           | White Label   |  Skyline Fare Estimate Integration iPhone                 | 1       |    
+    | 2  items                     |       |                 |               |  3 points                                                 |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    
+    $ kan Backlog devops
+    
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Status                       | Type  | Who             | Company       | Title                                                     | Points  |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    | Backlog                      | Story | Radek           | DevOps        |  Configure build server on Mac Mini for Android           | 2       |    
+    | 1  items                     |       |                 |               |  2 points                                                 |
+    +------------------------------+-------+-----------------+---------------+-----------------------------------------------------------+---------+
+    
      
 ## Development
 

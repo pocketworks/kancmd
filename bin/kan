@@ -47,7 +47,7 @@ module BaneryStats
   end
 
   class OutputSummary
-    attr_accessor :tasks, :task_types, :users, :estimates
+    attr_accessor :tasks, :task_types, :users, :estimates, :columns
 
     def self.run
       new.run
@@ -64,12 +64,13 @@ module BaneryStats
 #       end
       self.estimates = project_estimates('pocketworks', 58789)
       self.users = project_users('pocketworks', 58789)
+      self.columns = project_columns('pocketworks', 58789)
       self.task_types = project_task_types('pocketworks', 58789)
       self.tasks = project_tasks('pocketworks', 58789)
       
       
-      #puts self.users.last
-      #puts self.task_types.last
+      #puts self.columns
+      puts self.tasks.last
       #log("#{self.tasks.count}")
       #puts self.stale
     end
@@ -92,6 +93,14 @@ module BaneryStats
     
     def self.is_open(card)
       card["column_id"] != 393331
+    end
+    
+    def is_backlog(card)
+      card["column_id"] != 414113
+    end
+    
+    def in_column(card)
+      self.columns.select{|c|c["id"] == card["column_id"]}.first
     end
     
     def self.is_with_jabba(card)
@@ -153,6 +162,8 @@ module BaneryStats
        else
          t["username"] = nil
        end
+       
+       t["column_name"] = in_column(t)["name"]
               
        t["is_open"] = is_open(t)
       end
@@ -176,6 +187,12 @@ module BaneryStats
       #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
       data
     end 
+    
+    def project_columns(workspace_name, project_id)
+      data = JsonGet.perform(project_columns_url(workspace_name, project_id))
+      #data.keep_if { |d| d.has_key?("owner_id") && d["owner_id"] == own_user_id }
+      data
+    end
     
     def user_by_id(id)
       self.users.select{|u|u["id"]==id}.first
@@ -216,6 +233,10 @@ module BaneryStats
     def project_estimates_url(workspace_name, project_id)
       "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/estimates.json"
     end
+    
+    def project_columns_url(workspace_name, project_id)
+      "https://#{workspace_name}.kanbanery.com/api/v1/projects/#{project_id}/columns.json"
+    end
   end
 end
 
@@ -249,21 +270,33 @@ tasks = report.tasks.select{|t| t["is_open"] && t['task_type_name'] != 'Delivera
 deliverables = report.tasks.select{|t| t["is_open"] && t['task_type_name'] == 'Deliverable'}
 
 rows = []
+allowed_tasks =[]
 total = 0
+filters = ARGV
 #cmd = CmdParser.new(ARGV)
 tasks.each do |task| 
+  #filter
+  allow = true
+  filters.each do |f|
+    t = task.select{|k,v| v =~ /#{f}/i}.first
+    allow = false unless t
+  end
+  next unless allow
+  
+  # display
+  allowed_tasks << task
   fmt_estimate = task["estimate"] ? task["estimate"].to_i : (task['task_type_name'] == "Bug" ? "-" : Paint["MISSING",:red])
   fmt_estimate = Paint[fmt_estimate,:bright,:red] if task["estimate"] && task["estimate"] > 8
   parts = task['title'].split(':')
   title = parts.length == 2 ? parts[1] : parts[0] 
-  company = parts.length == 2 ? parts[0] : ""
-  rows << [task['task_type_name'], task['username'], company, title, fmt_estimate]
+  company = parts.length == 2 ? parts[0] : ""  
+  rows << [task["column_name"],task['task_type_name'], task['username'], company, title, fmt_estimate]
   total += task["estimate"] ? task["estimate"].to_i : 0
   #puts "#{task['task_type_name']}:#{task['username']}:#{task['title']} "
 end
-rows << [Paint["#{tasks.count} items",:yellow], "","", "", Paint["#{total} points",:yellow]]
+rows << [Paint["#{allowed_tasks.count} items",:yellow], "","", "", Paint["#{total} points",:yellow]]
 
-table = Terminal::Table.new :headings => ['Type', 'Who', 'Company', 'Title', 'Points'], :rows => rows
+table = Terminal::Table.new :headings => ['Status', 'Type', 'Who', 'Company', 'Title', 'Points'], :rows => rows
 puts table
 
 
