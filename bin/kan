@@ -70,7 +70,7 @@ module BaneryStats
       
       
       #puts self.columns
-      puts self.tasks.last
+      #puts self.tasks.last
       #log("#{self.tasks.count}")
       #puts self.stale
     end
